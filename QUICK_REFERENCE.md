@@ -78,17 +78,71 @@
 
 ---
 
+## Option 4: Two-Way Google Sheets Sync
+```
+┌─────────────────┐
+│     Browser     │
+│  (React App)    │
+└────────┬────────┘
+         │
+         ↓
+┌─────────────────────────┐
+│   Backend API Server    │
+│  ├─ CRUD Endpoints      │
+│  └─ Sync Worker         │
+└────────┬───────┬────────┘
+         │       │
+         ↓       ↓
+┌──────────┐  ┌──────────────┐
+│ Database │  │ Google Sheets│
+│(Primary) │  │   (Mirror)   │
+└──────────┘  └──────────────┘
+```
+**Effort:** 5-7 days | **Cost:** $10-30/month  
+**Best For:** Must keep Sheets for non-tech users  
+**Trade-offs:** 3x complexity, sync latency, conflict resolution  
+
+**⚠️ Consider Instead:** One-way export (Sheets = read-only report)  
+**Why:** Much simpler (3-4 days), no conflicts, low maintenance
+
+---
+
 ## Key Decision Factors
 
-| Factor | Option 1 | Option 2 | Option 3 |
-|--------|----------|----------|----------|
-| **Development Time** | 3-5 days | 2-4 days ✓ | 4-6 days |
-| **Learning Curve** | Medium | Low ✓ | High |
-| **Backend Management** | Required | Minimal ✓ | Minimal ✓ |
-| **Real-time Updates** | Custom | Built-in ✓ | Custom |
-| **SQL Support** | Yes ✓ | Yes ✓ | Depends |
-| **Authentication** | Custom | Built-in ✓ | Custom |
-| **Free Tier** | Limited | Generous ✓ | Good |
+| Factor | Option 1 | Option 2 | Option 3 | Option 4 |
+|--------|----------|----------|----------|----------|
+| **Development Time** | 3-5 days | 2-4 days ✓ | 4-6 days | 5-7 days |
+| **Learning Curve** | Medium | Low ✓ | High | High |
+| **Backend Management** | Required | Minimal ✓ | Minimal ✓ | High |
+| **Real-time Updates** | Custom | Built-in ✓ | Custom | No (5-15min sync) |
+| **SQL Support** | Yes ✓ | Yes ✓ | Depends | Yes ✓ |
+| **Authentication** | Custom | Built-in ✓ | Custom | Custom + OAuth |
+| **Free Tier** | Limited | Generous ✓ | Good | None |
+| **Keeps Sheets Active** | No | No | No | Yes ✓ |
+| **Maintenance** | Medium | Low ✓ | Low | High |
+
+---
+
+## Which Option Should You Choose?
+
+### Choose Option 2 (Supabase) ⭐ IF:
+- You want fastest implementation (2-4 days)
+- Free tier is sufficient ($0/month)
+- Users can adapt to app-only workflow
+- You want minimal ongoing maintenance
+
+### Choose Option 4 (Two-Way Sync) IF:
+- Non-technical admins **must** continue using Google Sheets
+- You cannot retrain users to use app interface
+- Budget allows $10-30/month + higher maintenance
+- You accept 5-15 minute sync delays
+- Team can handle conflict resolution issues
+
+### Better Alternative to Option 4:
+**Supabase + One-Way Export to Sheets**
+- App is primary (real-time, validated)
+- Sheets is read-only report (auto-updated daily/hourly)
+- **Effort:** 3-4 days | **Maintenance:** Low | **No conflicts**
 
 ---
 

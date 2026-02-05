@@ -195,6 +195,221 @@ DynamoDB/PlanetScale
 
 ---
 
+### Option 4: Two-Way Google Sheets Sync with Database
+**Best for:** Maintaining Google Sheets for non-technical users while adding app persistence
+
+#### Architecture
+```
+React Frontend
+    ↕ (REST API)
+Backend API (Node.js/Express)
+    ↕
+Database (Primary Source of Truth)
+    ↕ (Sync Service)
+Google Sheets API
+    ↕
+Google Sheets (Mirror/View)
+```
+
+#### Concept
+This hybrid approach keeps Google Sheets in the ecosystem but as a **synced mirror** rather than the primary data source. The app writes to a database, and a background sync service keeps Google Sheets updated bidirectionally.
+
+#### Components Needed
+
+1. **Primary Database**
+   - PostgreSQL, MySQL, or Firebase
+   - Same schema as Option 1 (participants + daily_reps)
+   - Acts as the single source of truth
+
+2. **Backend API with Sync Service**
+   - RESTful API for app CRUD operations
+   - Background sync worker (runs every 1-15 minutes)
+   - Google Sheets API integration with OAuth2
+   - Conflict resolution strategy
+
+3. **Google Sheets API Integration**
+   - **Read Access:** Service Account or OAuth2
+   - **Write Access:** OAuth2 (requires authentication)
+   - **API Quotas:** 
+     - Read: 300 requests/minute/project
+     - Write: 100 requests/minute/user
+   - **Batch Operations:** Update multiple cells in single request
+
+4. **Sync Logic**
+   ```javascript
+   // Pseudo-code for bidirectional sync
+   async function syncToGoogleSheets() {
+     const dbData = await database.getAllDailyReps();
+     const sheetData = await sheets.getRange('A1:Z100');
+     
+     // Compare timestamps to determine which is newer
+     const changes = detectChanges(dbData, sheetData);
+     
+     // Apply database changes to sheets
+     if (changes.toSheets.length > 0) {
+       await sheets.batchUpdate(changes.toSheets);
+     }
+     
+     // Apply sheet changes to database
+     if (changes.toDatabase.length > 0) {
+       await database.batchUpdate(changes.toDatabase);
+     }
+   }
+   ```
+
+5. **Conflict Resolution Strategies**
+   - **Last-Write-Wins:** Use timestamps to determine which update is newer
+   - **Database Priority:** Database always wins conflicts
+   - **Sheet Priority:** Sheets always wins conflicts (not recommended)
+   - **Manual Review:** Flag conflicts for admin review
+
+#### Data Flow Scenarios
+
+**Scenario 1: User enters data via app**
+```
+User → React Form → API → Database → (Success)
+                              ↓
+                       Sync Service (triggered)
+                              ↓
+                       Google Sheets (updated)
+```
+
+**Scenario 2: Admin edits Google Sheet directly**
+```
+Admin → Google Sheets → (Manual edit)
+                              ↓
+                       Sync Service (polling/webhook)
+                              ↓
+                       Database (updated)
+                              ↓
+                       App UI (reflects change on next fetch)
+```
+
+#### Technical Challenges
+
+1. **Authentication Complexity**
+   - Need OAuth2 flow for Google Sheets write access
+   - Service account has read-only public access limitations
+   - Must store and refresh OAuth tokens securely
+
+2. **API Rate Limits**
+   - Google Sheets API has strict quotas
+   - Large datasets may require batching
+   - Frequent syncs could hit rate limits
+   - **Mitigation:** Implement exponential backoff, batch updates
+
+3. **Conflict Resolution**
+   - Simultaneous edits in app and sheet need resolution
+   - Need timestamp tracking on every cell/row
+   - Consider adding `last_modified_by` and `last_modified_at` columns
+
+4. **Schema Mapping**
+   - Google Sheets is flat (rows/columns)
+   - Database is relational (tables/foreign keys)
+   - Need mapping layer to transform data structures
+
+5. **Sync Latency**
+   - Real-time sync is impractical due to API limits
+   - Typical sync intervals: 1-15 minutes
+   - Users won't see immediate updates across systems
+
+6. **Error Handling**
+   - Network failures during sync
+   - Malformed data in sheets (e.g., text in number fields)
+   - Deleted rows/participants
+   - **Mitigation:** Retry logic, validation, audit logs
+
+#### Implementation Approach
+
+**Phase 1: Database Setup (Day 1)**
+- Set up database schema (same as Option 1)
+- Migrate existing Google Sheets data to database
+- Build basic CRUD API
+
+**Phase 2: App Integration (Days 2-3)**
+- Update frontend to use database API
+- Add data entry forms
+- Test app functionality without sync
+
+**Phase 3: Google Sheets Sync (Days 3-5)**
+- Set up Google Cloud Project and OAuth2
+- Implement Google Sheets API read/write
+- Build sync service with conflict resolution
+- Test bidirectional sync thoroughly
+
+**Phase 4: Deployment & Monitoring (Day 6)**
+- Deploy all components
+- Set up sync monitoring and alerts
+- Configure sync interval (start conservative at 15 min)
+- Document manual intervention procedures
+
+#### Deployment Requirements
+
+- **Backend:** Node.js server with scheduled jobs (cron or similar)
+- **Worker:** Background process or serverless function (every 5-15 min)
+- **Credentials:** Google Cloud Project with Sheets API enabled
+- **OAuth Flow:** Web-based consent screen for initial authorization
+- **Storage:** Secure token storage (environment variables or secrets manager)
+
+#### Migration Path
+
+1. Set up Google Cloud Project and enable Sheets API
+2. Create OAuth2 credentials and configure consent screen
+3. Build database and API (same as Option 1)
+4. Implement initial data migration from Sheets to DB
+5. Build sync service with read-only testing first
+6. Add write capability with thorough conflict testing
+7. Deploy with monitoring
+8. Run parallel systems for 1 week to validate
+9. Switch primary workflow to app
+10. Keep Sheets as secondary view/editor
+
+#### Pros and Cons
+
+**Pros:**
+- ✅ Maintains Google Sheets access for non-technical users
+- ✅ Adds app-based data entry with validation
+- ✅ Database enables future features (analytics, exports)
+- ✅ Gradual transition - both systems work during migration
+
+**Cons:**
+- ❌ Most complex solution (2-3x complexity of other options)
+- ❌ Sync latency (not real-time, typically 5-15 min delay)
+- ❌ Ongoing maintenance burden for sync service
+- ❌ Potential for conflicts and data inconsistencies
+- ❌ Google API rate limits can cause issues
+- ❌ OAuth token management adds security concerns
+- ❌ Debugging sync issues is time-consuming
+
+**Estimated Effort:** 5-7 days development time  
+**Cost:** $10-30/month (backend hosting + database + worker processes)  
+**Maintenance:** Medium-High (sync monitoring, conflict resolution, API token refresh)
+
+#### When to Choose This Option
+
+Choose Option 4 if:
+- Non-technical staff **must** continue using Google Sheets
+- You need gradual migration with both systems active
+- Budget allows for higher complexity and maintenance
+- Team has experience with Google Sheets API
+
+**Do NOT choose if:**
+- You can fully migrate users to app-only workflow
+- Team is small and maintenance burden is a concern
+- Real-time data consistency is critical
+- You want simplest/fastest implementation
+
+#### Alternative: One-Way Export Instead
+
+If the goal is just to **view** data in Sheets (not edit), consider:
+- App writes to database only
+- Scheduled export job (daily/hourly) generates CSV
+- Import CSV into Google Sheets automatically
+- Sheets becomes **read-only** report
+- **Effort:** 3-4 days | **Maintenance:** Low | **No conflicts**
+
+---
+
 ## Required Code Changes
 
 ### 1. Backend API (Option 1 - Express.js Example)
@@ -392,51 +607,107 @@ async function migrateData() {
 | **Option 2: Firebase** | Free (50k reads/day, 20k writes/day) | Pay-per-use (~$0.01-5/month) | Rapid development |
 | **Option 2: Supabase** | Free (500MB DB, 2GB bandwidth) | $25/month for Pro | PostgreSQL preference |
 | **Option 3: Serverless** | $0 (Vercel free tier) | $20/month for Pro | High scalability needs |
+| **Option 4: Two-Way Sheets Sync** | $10-30/month (backend + worker) | $30-60/month | Must keep Sheets access |
 
 ---
 
 ## Recommendations
 
-### Immediate Next Steps
-1. **Choose Option 2 (Supabase)** - Best balance of:
-   - Quick development (2-4 days)
-   - PostgreSQL database (SQL familiarity)
-   - Built-in authentication
-   - Free tier suitable for challenge size
-   - Real-time subscriptions for live updates
-   - Easy to scale if needed
+### Decision Framework
 
-2. **Start with MVP Features:**
-   - Data entry form for daily reps
-   - View historical data (existing dashboard)
-   - Simple authentication (email/password)
-   - Keep Google Sheets as read-only backup
+**If you want to REPLACE Google Sheets entirely:**
+→ **Choose Option 2 (Supabase)** - Best balance of speed, features, and cost
 
-3. **Add Later (Phase 2):**
-   - Bulk data entry
-   - Data export functionality
-   - Email notifications/reminders
-   - Admin panel for user management
-   - Historical data editing
+**If you MUST keep Google Sheets as an active editor:**
+→ **Choose Option 4 (Two-Way Sync)** - Most complex but preserves Sheets workflow
 
-### Alternative for Minimal Changes
-If you want to **keep Google Sheets** but add data entry through the app:
-- Use Google Sheets API (with authentication)
-- Add data submission that writes back to Sheets
-- Requires OAuth setup and API credentials
-- More complex than replacing with database
-- Not recommended due to Google Sheets API rate limits
+**If you want simplest migration:**
+→ **Choose Option 1 (Node.js + PostgreSQL)** - Traditional stack, full control
+
+### Recommended: Option 2 (Supabase) - For Most Use Cases
+Best choice **unless** you have non-technical users who must continue editing in Google Sheets.
+
+**Rationale:**
+- Quick development (2-4 days)
+- PostgreSQL database (SQL familiarity)
+- Built-in authentication
+- Free tier suitable for challenge size
+- Real-time subscriptions for live updates
+- Easy to scale if needed
+- Minimal maintenance overhead
+
+### When to Choose Option 4 (Two-Way Sheets Sync)
+
+**Choose this ONLY if:**
+- You have non-technical administrators who **must** use Google Sheets
+- You cannot retrain users to use the app interface
+- Budget allows for $10-30/month + higher maintenance
+- Team can handle 5-7 day development timeline
+- You accept 5-15 minute sync latency
+
+**Critical Considerations:**
+- **3x more complex** than other options
+- Requires ongoing monitoring of sync service
+- Potential for data conflicts if both systems edited simultaneously
+- Google API rate limits can cause sync failures
+- Not real-time (typical 5-15 min sync interval)
+
+**Better Alternative:** Consider Option 2 (Supabase) + scheduled **one-way export** to Sheets:
+- App is primary editor (full validation, real-time)
+- Google Sheets becomes read-only report (auto-updated hourly/daily)
+- Much simpler: 3-4 days development, low maintenance
+- No conflict resolution needed
+- Still provides Sheets visibility for stakeholders
+
+### Implementation Path
+
+**Phase 1: Start with MVP (Option 2 - Supabase)**
+- Data entry form for daily reps
+- View historical data (existing dashboard)
+- Simple authentication (email/password)
+- **Timeline:** 2-4 days
+- **Cost:** $0/month
+
+**Phase 2: Add Sheets Integration if Needed**
+- Assess if users adapted to app workflow
+- If Sheets access still required, add one-way export (3-4 days)
+- Only implement two-way sync if absolutely necessary (5-7 days total)
+
+### Start with MVP Features:
+- Data entry form for daily reps
+- View historical data (existing dashboard)
+- Simple authentication (email/password)
+- Keep Google Sheets as static backup
+
+### Add Later (Phase 2):
+- Bulk data entry
+- Data export functionality (CSV, Excel)
+- Email notifications/reminders
+- Admin panel for user management
+- Historical data editing
+- (Optional) One-way export to Sheets for viewing
 
 ---
 
 ## Conclusion
 
-Converting this app from reporting-only to reporting + persistence is achievable with **2-5 days of development effort** and **$0-25/month operating cost**. The recommended approach is using **Supabase** (Option 2) for rapid development with minimal infrastructure management.
+Converting this app from reporting-only to reporting + persistence is achievable with **2-7 days of development effort** and **$0-30/month operating cost**, depending on chosen approach.
+
+### Quick Decision Guide:
+- **Fastest & Cheapest:** Option 2 (Supabase) - 2-4 days, $0/month
+- **Most Flexible:** Option 1 (Node.js) - 3-5 days, $0-20/month
+- **Best Scale:** Option 3 (Serverless) - 4-6 days, $0-10/month
+- **Keep Sheets Active:** Option 4 (Two-Way Sync) - 5-7 days, $10-30/month
+
+### Recommended Path:
+1. Start with **Option 2 (Supabase)** for rapid MVP
+2. Add one-way export to Sheets if needed for stakeholder reporting
+3. Only implement two-way sync (Option 4) if users cannot adapt to app workflow
 
 The main changes involve:
 1. Replacing CSV fetch with database API calls (~50 lines of code)
 2. Adding data entry UI components (~100-150 lines of code)
-3. Setting up backend infrastructure (Supabase: ~1-2 hours)
+3. Setting up backend infrastructure (Supabase: ~1-2 hours, Two-way sync: +3-5 days)
 4. Migrating historical data (one-time script)
 
 The app will transform from a read-only dashboard to a full-featured data management system where participants can submit their own daily reps, while maintaining all existing reporting and visualization features.

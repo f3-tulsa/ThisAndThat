@@ -60,13 +60,72 @@ This repository contains documentation for migrating **The Merkin 200** fitness 
 
 ---
 
-## 🎪 Three Architecture Options
+## 🎪 Four Architecture Options
 
 | Option | Effort | Cost/Month | Best For |
 |--------|--------|------------|----------|
 | **1. Node.js + PostgreSQL** | 3-5 days | $0-20 | Full control, custom logic |
 | **2. Supabase ⭐** | 2-4 days | $0 | Rapid development, managed |
 | **3. Serverless** | 4-6 days | $0-10 | Auto-scaling, cloud-native |
+| **4. Two-Way Sheets Sync** | 5-7 days | $10-30 | Must keep Sheets for editors |
+
+---
+
+## 🤔 Two-Way Google Sheets Sync (Option 4)
+
+**New in this update:** Detailed analysis of keeping Google Sheets as an active editor alongside the app.
+
+### How It Works
+- App writes to database (primary source of truth)
+- Background sync service updates Google Sheets bidirectionally
+- Sync runs every 5-15 minutes
+- Conflict resolution for simultaneous edits
+
+### When to Use
+- ✅ Non-technical staff **must** continue using Google Sheets
+- ✅ Cannot retrain users to app interface
+- ✅ Budget allows higher complexity
+
+### Trade-offs
+- ❌ 3x more complex than other options
+- ❌ Not real-time (5-15 min sync delay)
+- ❌ Requires conflict resolution strategy
+- ❌ Higher ongoing maintenance
+- ❌ Google API rate limits
+
+### Better Alternative
+**Supabase + One-Way Export:**
+- App is primary editor (real-time, validated)
+- Sheets becomes read-only report (auto-updated hourly/daily)
+- Much simpler: 3-4 days, low maintenance, no conflicts
+
+See [EXECUTIVE_SUMMARY.md](./EXECUTIVE_SUMMARY.md) Option 4 for complete technical details.
+
+---
+
+## 🎯 Decision Guide
+
+**Want to replace Sheets entirely?**  
+→ Choose **Option 2 (Supabase)** - 2-4 days, $0/month
+
+**Need Sheets as read-only report?**  
+→ Choose **Option 2 + One-Way Export** - 3-4 days, $0/month
+
+**Must keep Sheets as active editor?**  
+→ Choose **Option 4 (Two-Way Sync)** - 5-7 days, $10-30/month (complex)
+
+---
+
+## 🔑 Key Decision Factors
+
+| Factor | Option 2 (Supabase) | Option 4 (Two-Way Sync) |
+|--------|---------------------|------------------------|
+| **Timeline** | 2-4 days ✓ | 5-7 days |
+| **Cost** | $0/month ✓ | $10-30/month |
+| **Complexity** | Low ✓ | High |
+| **Maintenance** | Minimal ✓ | Significant |
+| **Real-time** | Yes ✓ | No (5-15 min delay) |
+| **Keeps Sheets Active** | No | Yes ✓ |
 
 ---
 
