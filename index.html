@@ -20,23 +20,24 @@
             font-family: 'Inter', sans-serif; 
             background-color: #f8fafc;
             -webkit-tap-highlight-color: transparent;
+            overflow-x: hidden;
         }
-        .animate-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         
         /* Smooth scrolling for iOS */
         .custom-scroll {
             -webkit-overflow-scrolling: touch;
         }
 
-        /* Gradient mask to fade content before it hits the nav */
+        /* Stronger gradient mask to ensure no overlap with UI controls */
         .bottom-fade {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            height: 180px;
-            background: linear-gradient(to top, #f8fafc 40%, rgba(248, 250, 252, 0) 100%);
+            height: 220px;
+            background: linear-gradient(to top, #f8fafc 50%, rgba(248, 250, 252, 0) 100%);
             pointer-events: none;
             z-index: 30;
         }
@@ -46,10 +47,10 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
         const { 
             AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
-            ResponsiveContainer, PieChart, Pie, Cell, Legend, ReferenceLine
+            ResponsiveContainer, PieChart, Pie, Cell, Legend
         } = Recharts;
 
         // Constants
@@ -67,12 +68,32 @@
             "The Gloom is where HIMs are made.",
             "DFQ: Don't Forget Quality.",
             "Speed is fine, but accuracy is final.",
-            "Pick up the six!"
+            "Pick up the six!",
+            "You are stronger than you think, but weaker than you will be.",
+            "Growth only happens outside the comfort zone."
         ];
 
-        const Icon = ({ name, size = 20, className = "" }) => (
-            <i data-lucide={name} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>
-        );
+        // Fixed Icon component with local initialization
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const iconRef = useRef(null);
+            
+            useEffect(() => {
+                if (iconRef.current && window.lucide) {
+                    window.lucide.createIcons({
+                        targets: [iconRef.current]
+                    });
+                }
+            }, [name]);
+
+            return (
+                <i 
+                    ref={iconRef}
+                    data-lucide={name} 
+                    style={{ width: size, height: size }} 
+                    className={`inline-block ${className}`}
+                ></i>
+            );
+        };
 
         const App = () => {
             const [parsedData, setParsedData] = useState(null);
@@ -188,36 +209,31 @@
                     king: [...processed].sort((a,b) => b.maxDay - a.maxDay)[0]
                 });
                 setLoading(false);
-                setTimeout(() => lucide.createIcons(), 100);
             };
 
             useEffect(() => { 
                 fetchData(); 
-                const qTimer = setInterval(() => setQuoteIdx(i => (i + 1) % QUOTES.length), 8000); 
+                // Increased interval to 15 seconds for even better readability
+                const qTimer = setInterval(() => setQuoteIdx(i => (i + 1) % QUOTES.length), 15000); 
                 return () => clearInterval(qTimer); 
             }, []);
-
-            useEffect(() => { 
-                lucide.createIcons(); 
-            }, [activeTab, loading]);
 
             if (loading) return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-900 text-white text-center">
                     <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
-                    <p className="font-black uppercase tracking-widest italic">Syncing the Gloom...</p>
+                    <p className="font-black uppercase tracking-widest italic animate-pulse">Syncing the Gloom...</p>
                 </div>
             );
 
-            // Updated NavButton with better touch target and active state
             const NavButton = ({ id, label, icon }) => (
                 <button 
                     onClick={() => setActiveTab(id)}
                     className={`flex-1 flex flex-col items-center py-3 transition-all relative ${activeTab === id ? 'text-blue-500' : 'text-slate-500 hover:text-slate-400'}`}
                 >
-                    <Icon name={icon} size={22} className={activeTab === id ? 'scale-110' : 'scale-100'} />
+                    <Icon name={icon} size={22} className={activeTab === id ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'scale-100'} />
                     <span className={`text-[9px] mt-1 font-black uppercase tracking-tighter ${activeTab === id ? 'opacity-100' : 'opacity-60'}`}>{label}</span>
                     {activeTab === id && (
-                        <span className="absolute -top-1 w-1 h-1 bg-blue-500 rounded-full"></span>
+                        <span className="absolute -top-1 w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.5)]"></span>
                     )}
                 </button>
             );
@@ -230,16 +246,15 @@
                             <h1 className="text-2xl font-black text-slate-900 tracking-tighter italic uppercase leading-none">MERKIN 200</h1>
                             <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest leading-none mt-1">Feb 2026 • Oklahoma</p>
                         </div>
-                        <button onClick={fetchData} className="p-3 bg-slate-100 rounded-xl text-slate-500 active:scale-90 transition-all">
+                        <button onClick={fetchData} className="p-3 bg-slate-100 rounded-xl text-slate-500 active:scale-90 transition-all shadow-sm">
                             <Icon name="refresh-cw" size={18} />
                         </button>
                     </header>
 
-                    {/* Main Content with deep bottom padding */}
-                    <main className="flex-grow p-4 space-y-6 pb-52 animate-in">
+                    {/* Content Area with deep bottom padding */}
+                    <main className="flex-grow p-4 space-y-6 pb-60 animate-in">
                         {activeTab === 'summary' && (
                             <div className="space-y-6">
-                                {/* Pace Progress Widget */}
                                 <div className="bg-slate-900 text-white p-6 rounded-[2.5rem] shadow-2xl relative overflow-hidden border border-slate-800">
                                     <div className="relative z-10">
                                         <div className="flex justify-between items-start mb-2">
@@ -277,7 +292,6 @@
                                     <Icon name="target" size={200} className="absolute -bottom-10 -right-10 opacity-5 rotate-12" />
                                 </div>
 
-                                {/* Top King Card */}
                                 <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center space-x-4">
                                     <div className="bg-amber-100 p-3 rounded-2xl text-amber-600">
                                         <Icon name="crown" size={24} />
@@ -290,50 +304,34 @@
                                     <Icon name="chevron-right" size={16} className="text-slate-300" />
                                 </div>
 
-                                {/* Area Chart */}
-                                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                                    <h3 className="text-[10px] font-black text-slate-400 mb-6 uppercase tracking-[0.2em] flex items-center">
-                                        <Icon name="trending-up" size={14} className="mr-2" /> Daily Volume Chart
-                                    </h3>
-                                    <div className="h-52 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={parsedData.dailyTrends}>
-                                                <defs>
-                                                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2}/>
-                                                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                                                    </linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 'bold', fill: '#94a3b8'}} />
-                                                <YAxis hide />
-                                                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }} />
-                                                <Area type="monotone" dataKey="total" stroke="#2563eb" fill="url(#colorTotal)" strokeWidth={4} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    </div>
+                                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm h-64">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={parsedData.dailyTrends}>
+                                            <defs>
+                                                <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2}/>
+                                                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 'bold', fill: '#94a3b8'}} />
+                                            <YAxis hide />
+                                            <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }} />
+                                            <Area type="monotone" dataKey="total" stroke="#2563eb" fill="url(#colorTotal)" strokeWidth={4} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'leaderboard' && (
                             <div className="space-y-3">
-                                <div className="flex justify-between items-end px-2 mb-4">
-                                    <div>
-                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">The Leaderboard</h3>
-                                        <p className="text-xl font-black text-slate-900 tracking-tighter italic uppercase">Battle Status</p>
-                                    </div>
-                                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded uppercase tracking-tighter">Target: {currentTarget}</span>
-                                </div>
                                 {parsedData.people.filter(p => p.total > 0).map((p, i) => (
                                     <div key={i} className="bg-white p-5 rounded-[2rem] flex flex-col border border-slate-100 shadow-sm relative overflow-hidden active:scale-[0.98] transition-all">
                                         {p.onPace && <div className="absolute top-0 left-0 h-full w-2 bg-emerald-500"></div>}
-                                        
                                         <div className="flex justify-between items-start">
                                             <div className="flex items-center space-x-4">
-                                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm ${i === 0 ? 'bg-amber-400 text-white' : i === 1 ? 'bg-slate-300 text-white' : i === 2 ? 'bg-orange-400 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                                    {i + 1}
-                                                </div>
+                                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-sm ${i === 0 ? 'bg-amber-400 text-white' : i === 1 ? 'bg-slate-300 text-white' : i === 2 ? 'bg-orange-400 text-white' : 'bg-slate-100 text-slate-400'}`}>{i + 1}</div>
                                                 <div>
                                                     <div className="flex items-center space-x-2">
                                                         <p className="font-black text-lg text-slate-900 uppercase tracking-tighter italic leading-none">{p.name}</p>
@@ -353,7 +351,6 @@
                                                 </p>
                                             </div>
                                         </div>
-
                                         <div className="grid grid-cols-2 gap-4 mt-5 pt-4 border-t border-slate-50">
                                             <div>
                                                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Feb 28 Projection</p>
@@ -371,19 +368,16 @@
 
                         {activeTab === 'regions' && (
                             <div className="space-y-6">
-                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center">
-                                    <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest">Regional Rivalry</h3>
-                                    <div className="h-64 w-full">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie data={parsedData.regionData} dataKey="value" innerRadius={70} outerRadius={90} paddingAngle={8} stroke="none">
-                                                    {parsedData.regionData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} cornerRadius={12} />)}
-                                                </Pie>
-                                                <Tooltip />
-                                                <Legend verticalAlign="bottom" height={36} wrapperStyle={{fontSize: '9px', fontWeight: '900', textTransform: 'uppercase'}}/>
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                    </div>
+                                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center h-64">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                            <Pie data={parsedData.regionData} dataKey="value" innerRadius={70} outerRadius={90} paddingAngle={8} stroke="none">
+                                                {parsedData.regionData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} cornerRadius={12} />)}
+                                            </Pie>
+                                            <Tooltip />
+                                            <Legend verticalAlign="bottom" height={36} wrapperStyle={{fontSize: '9px', fontWeight: '900', textTransform: 'uppercase'}}/>
+                                        </PieChart>
+                                    </ResponsiveContainer>
                                 </div>
                                 <div className="space-y-3">
                                     {parsedData.regionData.map((reg, i) => (
@@ -405,20 +399,11 @@
 
                         {activeTab === 'logs' && (
                             <div className="space-y-3">
-                                <div className="bg-blue-600 text-white p-6 rounded-3xl shadow-xl flex items-center space-x-4">
-                                    <Icon name="scroll-text" size={32} className="opacity-50" />
-                                    <div>
-                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-1">Audit Trail</h3>
-                                        <p className="text-sm font-bold opacity-90 leading-tight italic">Validated data through Feb {dayOfMonth}.</p>
-                                    </div>
-                                </div>
                                 {parsedData.dailyTrends.slice().reverse().map((l, i) => (
-                                    <div key={i} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100 shadow-sm">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="p-2 bg-slate-50 rounded-lg">
-                                                <Icon name="calendar" size={16} className="text-slate-400" />
-                                            </div>
-                                            <span className="font-black text-sm text-slate-900 italic">{l.date}</span>
+                                    <div key={i} className="bg-white p-4 rounded-2xl flex justify-between items-center border border-slate-100 shadow-sm animate-in" style={{animationDelay: `${i * 0.05}s`}}>
+                                        <div className="flex items-center space-x-3 text-slate-900">
+                                            <div className="p-2 bg-slate-50 rounded-lg"><Icon name="calendar" size={16} className="text-slate-400" /></div>
+                                            <span className="font-black text-sm italic uppercase">{l.date}</span>
                                         </div>
                                         <span className="text-blue-600 font-black tabular-nums text-lg">+{l.total.toLocaleString()}</span>
                                     </div>
@@ -430,11 +415,13 @@
                     {/* Gradient Fade Overlay */}
                     <div className="bottom-fade"></div>
 
-                    {/* Mumble Chatter Ticker */}
+                    {/* Mumble Chatter Ticker - Fixed text wrap and min-height */}
                     <div className="fixed bottom-28 left-4 right-4 z-40 pointer-events-none">
-                        <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl shadow-xl border border-slate-200 text-center animate-in mx-auto max-w-xs">
-                            <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-0.5 leading-none">Mumble Chatter</p>
-                            <p className="text-[10px] font-bold text-slate-900 italic truncate tracking-tight uppercase">"{QUOTES[quoteIdx]}"</p>
+                        <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-2xl shadow-xl border border-slate-200 text-center animate-in mx-auto max-w-[92%] min-h-[80px] flex flex-col justify-center">
+                            <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-1.5 leading-none">Mumble Chatter</p>
+                            <p className="text-[11px] font-bold text-slate-900 italic tracking-tight uppercase leading-snug">
+                                "{QUOTES[quoteIdx]}"
+                            </p>
                         </div>
                     </div>
 
