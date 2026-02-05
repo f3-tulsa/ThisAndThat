@@ -53,13 +53,23 @@
             ResponsiveContainer, PieChart, Pie, Cell, Legend
         } = Recharts;
 
-        // Constants
-        const COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
-        const SHEET_ID = '1gAcN7cONSibBOwN8O2icTiWZHV8mxNkGyx8WiQ004tE';
-        const TAB_GID = '2078211101'; 
-        const DAILY_GOAL = 200;
-        const TOTAL_DAYS = 28;
-        const TOTAL_GOAL = 5600;
+        // =====================================================
+        // CONFIGURATION - All app-wide constants
+        // =====================================================
+        const CONFIG = {
+            // Challenge Settings
+            DAILY_GOAL: 200,
+            TOTAL_DAYS: 28,
+            TOTAL_GOAL: 5600,
+            
+            // Data Source
+            SHEET_ID: '1gAcN7cONSibBOwN8O2icTiWZHV8mxNkGyx8WiQ004tE',
+            TAB_GID: '2078211101',
+            
+            // UI Settings
+            COLORS: ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'],
+            QUOTE_INTERVAL_MS: 15000,
+        };
 
         const QUOTES = [
             "Leave no man behind, but leave him better than you found him.",
@@ -72,6 +82,239 @@
             "You are stronger than you think, but weaker than you will be.",
             "Growth only happens outside the comfort zone."
         ];
+
+        // =====================================================
+        // BUSINESS LOGIC - Core calculation functions
+        // =====================================================
+        
+        /**
+         * Calculate rank based on total reps achieved
+         * @param {number} total - Total reps completed
+         * @returns {string} Rank name
+         */
+        const calculateRank = (total) => {
+            if (total >= 5000) return "Nat-T";
+            if (total >= 3000) return "Site Q";
+            if (total >= 1500) return "HIM";
+            if (total >= 500) return "PAX";
+            return "FNG";
+        };
+
+        /**
+         * Calculate daily target based on date
+         * @param {Date} date - Current date
+         * @returns {number} Target reps for the day
+         */
+        const calculateDailyTarget = (date) => {
+            return date.getDate() * CONFIG.DAILY_GOAL;
+        };
+
+        /**
+         * Calculate month-end projection based on current pace
+         * @param {number} currentTotal - Current total reps
+         * @param {number} dayOfMonth - Current day of the month
+         * @returns {number} Projected total by end of month
+         */
+        const calculateProjection = (currentTotal, dayOfMonth) => {
+            return Math.round((currentTotal / dayOfMonth) * CONFIG.TOTAL_DAYS);
+        };
+
+        /**
+         * Aggregate statistics by region
+         * @param {Array} people - Array of person objects
+         * @returns {Object} Region statistics
+         */
+        const aggregateRegionStats = (people) => {
+            const regionStats = {};
+            people.forEach(person => {
+                if (!regionStats[person.region]) {
+                    regionStats[person.region] = { total: 0, personCount: 0 };
+                }
+                if (person.total > 0) {
+                    regionStats[person.region].total += person.total;
+                    regionStats[person.region].personCount += 1;
+                }
+            });
+            return regionStats;
+        };
+
+        /**
+         * Calculate summary statistics from processed data
+         * @param {Array} people - Array of person objects
+         * @returns {Object} Summary statistics
+         */
+        const calculateSummaryStats = (people) => {
+            return {
+                grandTotal: people.reduce((acc, p) => acc + p.total, 0),
+                activeCount: people.filter(p => p.total > 0).length,
+                king: [...people].sort((a, b) => b.maxDay - a.maxDay)[0]
+            };
+        };
+
+        // =====================================================
+        // DATA PROCESSING - CSV parsing and transformation
+        // =====================================================
+
+        /**
+         * Parse CSV text into array of arrays
+         * @param {string} text - Raw CSV text
+         * @returns {Array<Array<string>>} Parsed rows
+         */
+        const parseCSVText = (text) => {
+            return text.split(/\r?\n/).map(row => {
+                const cells = [];
+                let current = '', inQuotes = false;
+                for (let i = 0; i < row.length; i++) {
+                    if (row[i] === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (row[i] === ',' && !inQuotes) {
+                        cells.push(current.trim());
+                        current = '';
+                    } else {
+                        current += row[i];
+                    }
+                }
+                cells.push(current.trim());
+                return cells.map(c => c.replace(/^"|"$/g, ''));
+            });
+        };
+
+        /**
+         * Extract people data from CSV rows
+         * @param {Array<Array<string>>} rows - Parsed CSV rows
+         * @param {number} nameIdx - Row index containing names
+         * @param {number} regionIdx - Row index containing regions
+         * @returns {Array} Array of person objects
+         */
+        const extractPeopleFromRows = (rows, nameIdx, regionIdx) => {
+            const people = [];
+            rows[nameIdx].slice(1).forEach((name, i) => {
+                if (name && !['TOTAL', 'AVERAGE', 'DATE'].includes(name.toUpperCase())) {
+                    people.push({
+                        name,
+                        region: rows[regionIdx] ? (rows[regionIdx][i + 1] || 'Unknown') : 'Unknown',
+                        colIdx: i + 1,
+                        total: 0,
+                        maxDay: 0,
+                        history: []
+                    });
+                }
+            });
+            return people;
+        };
+
+        /**
+         * Process daily data and update people totals
+         * @param {Array<Array<string>>} rows - Parsed CSV rows
+         * @param {Array} people - Array of person objects
+         * @param {number} nameIdx - Row index containing names
+         * @param {Date} today - Current date
+         * @returns {Array} Daily trends data
+         */
+        const processDailyData = (rows, people, nameIdx, today) => {
+            const dailyTrends = [];
+            rows.slice(nameIdx + 1).forEach(row => {
+                const dateStr = row[0];
+                if (!dateStr || /total|average/i.test(dateStr)) return;
+                
+                const rDate = new Date(dateStr);
+                if (isNaN(rDate) || rDate > today) return;
+
+                let rowSum = 0;
+                people.forEach(person => {
+                    const val = parseFloat(row[person.colIdx]?.replace(/,/g, ''));
+                    if (!isNaN(val) && val > 0) {
+                        person.total += val;
+                        if (val > person.maxDay) person.maxDay = val;
+                        rowSum += val;
+                    }
+                });
+                
+                if (rowSum > 0) {
+                    dailyTrends.push({ 
+                        date: dateStr.split('/').slice(0, 2).join('/'), 
+                        total: rowSum 
+                    });
+                }
+            });
+            return dailyTrends;
+        };
+
+        /**
+         * Enrich person data with calculated fields
+         * @param {Array} people - Array of person objects
+         * @param {number} currentTarget - Current target reps
+         * @param {number} dayOfMonth - Current day of the month
+         * @returns {Array} Enriched person objects
+         */
+        const enrichPeopleData = (people, currentTarget, dayOfMonth) => {
+            return people.map(person => ({
+                ...person,
+                rank: calculateRank(person.total),
+                onPace: person.total >= currentTarget,
+                diff: person.total - currentTarget,
+                projected: calculateProjection(person.total, dayOfMonth)
+            }));
+        };
+
+        // =====================================================
+        // DATA SERVICE - Fetching and orchestration
+        // =====================================================
+
+        /**
+         * Fetch CSV data from Google Sheets
+         * @returns {Promise<string>} CSV text
+         */
+        const fetchSheetData = async () => {
+            const cacheBuster = new Date().getTime();
+            const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/export?format=csv&gid=${CONFIG.TAB_GID}&t=${cacheBuster}`;
+            const res = await fetch(url);
+            return await res.text();
+        };
+
+        /**
+         * Parse and process CSV data into application state
+         * @param {string} csvText - Raw CSV text
+         * @param {Date} today - Current date
+         * @returns {Object} Processed data or error
+         */
+        const processSheetData = (csvText, today) => {
+            const rows = parseCSVText(csvText);
+            
+            const nameIdx = rows.findIndex(r => r[0]?.toUpperCase() === "DATE");
+            const regionIdx = rows.findIndex(r => r[0]?.toUpperCase() === "REGION");
+
+            if (nameIdx === -1) {
+                return { error: "Data headers not found." };
+            }
+
+            const people = extractPeopleFromRows(rows, nameIdx, regionIdx);
+            const dailyTrends = processDailyData(rows, people, nameIdx, today);
+            
+            const dayOfMonth = today.getDate();
+            const currentTarget = calculateDailyTarget(today);
+            const processedPeople = enrichPeopleData(people, currentTarget, dayOfMonth);
+            
+            const regionStats = aggregateRegionStats(processedPeople);
+            const regionData = Object.keys(regionStats).map(key => ({ 
+                name: key, 
+                value: regionStats[key].total,
+                efficiency: Math.round(regionStats[key].total / regionStats[key].personCount) 
+            }));
+
+            const summaryStats = calculateSummaryStats(processedPeople);
+
+            return {
+                people: processedPeople.sort((a, b) => b.total - a.total),
+                dailyTrends,
+                regionData,
+                ...summaryStats
+            };
+        };
+
+        // =====================================================
+        // UI COMPONENTS - Reusable React components
+        // =====================================================
 
         // Fixed Icon component with local initialization
         const Icon = ({ name, size = 20, className = "" }) => {
@@ -95,126 +338,51 @@
             );
         };
 
+        // =====================================================
+        // MAIN APP COMPONENT
+        // =====================================================
+
         const App = () => {
+            // State Management
             const [parsedData, setParsedData] = useState(null);
             const [activeTab, setActiveTab] = useState('summary');
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
             const [quoteIdx, setQuoteIdx] = useState(0);
 
+            // Current date and targets
             const today = new Date("2026-02-04T00:00:00");
             const dayOfMonth = today.getDate();
-            const currentTarget = dayOfMonth * DAILY_GOAL;
+            const currentTarget = calculateDailyTarget(today);
 
+            /**
+             * Fetch and parse data from Google Sheets
+             */
             const fetchData = async () => {
                 setLoading(true);
                 try {
-                    const cacheBuster = new Date().getTime();
-                    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${TAB_GID}&t=${cacheBuster}`;
-                    const res = await fetch(url);
-                    const text = await res.text();
-                    parseCSV(text);
+                    const csvText = await fetchSheetData();
+                    const processed = processSheetData(csvText, today);
+                    
+                    if (processed.error) {
+                        setError(processed.error);
+                    } else {
+                        setParsedData(processed);
+                    }
                 } catch (err) {
                     setError("Failed to sync data.");
+                } finally {
                     setLoading(false);
                 }
             };
 
-            const getRank = (total) => {
-                if (total >= 5000) return "Nat-T";
-                if (total >= 3000) return "Site Q";
-                if (total >= 1500) return "HIM";
-                if (total >= 500) return "PAX";
-                return "FNG";
-            };
-
-            const parseCSV = (text) => {
-                const rows = text.split(/\r?\n/).map(row => {
-                    const cells = [];
-                    let current = '', inQuotes = false;
-                    for (let i = 0; i < row.length; i++) {
-                        if (row[i] === '"') inQuotes = !inQuotes;
-                        else if (row[i] === ',' && !inQuotes) { cells.push(current.trim()); current = ''; }
-                        else current += row[i];
-                    }
-                    cells.push(current.trim());
-                    return cells.map(c => c.replace(/^"|"$/g, ''));
-                });
-
-                let nameIdx = rows.findIndex(r => r[0]?.toUpperCase() === "DATE");
-                let regionIdx = rows.findIndex(r => r[0]?.toUpperCase() === "REGION");
-
-                if (nameIdx === -1) { setError("Data headers not found."); setLoading(false); return; }
-
-                const people = [];
-                rows[nameIdx].slice(1).forEach((name, i) => {
-                    if (name && !['TOTAL', 'AVERAGE', 'DATE'].includes(name.toUpperCase())) {
-                        people.push({
-                            name,
-                            region: rows[regionIdx] ? (rows[regionIdx][i + 1] || 'Unknown') : 'Unknown',
-                            colIdx: i + 1,
-                            total: 0,
-                            maxDay: 0,
-                            history: []
-                        });
-                    }
-                });
-
-                const dailyTrends = [];
-                rows.slice(nameIdx + 1).forEach(row => {
-                    const dateStr = row[0];
-                    if (!dateStr || /total|average/i.test(dateStr)) return;
-                    const rDate = new Date(dateStr);
-                    if (isNaN(rDate) || rDate > today) return;
-
-                    let rowSum = 0;
-                    people.forEach(p => {
-                        const val = parseFloat(row[p.colIdx]?.replace(/,/g, ''));
-                        if (!isNaN(val) && val > 0) {
-                            p.total += val;
-                            if (val > p.maxDay) p.maxDay = val;
-                            rowSum += val;
-                        }
-                    });
-                    if (rowSum > 0) dailyTrends.push({ date: dateStr.split('/').slice(0, 2).join('/'), total: rowSum });
-                });
-
-                const processed = people.map(p => ({
-                    ...p,
-                    rank: getRank(p.total),
-                    onPace: p.total >= currentTarget,
-                    diff: p.total - currentTarget,
-                    projected: Math.round((p.total / dayOfMonth) * TOTAL_DAYS)
-                }));
-
-                const regionStats = {};
-                processed.forEach(p => {
-                    if (!regionStats[p.region]) regionStats[p.region] = { total: 0, pCount: 0 };
-                    if (p.total > 0) {
-                        regionStats[p.region].total += p.total;
-                        regionStats[p.region].pCount += 1;
-                    }
-                });
-
-                setParsedData({
-                    people: processed.sort((a,b) => b.total - a.total),
-                    dailyTrends,
-                    regionData: Object.keys(regionStats).map(k => ({ 
-                        name: k, 
-                        value: regionStats[k].total,
-                        efficiency: Math.round(regionStats[k].total / regionStats[k].pCount) 
-                    })),
-                    grandTotal: processed.reduce((a,p) => a + p.total, 0),
-                    activeCount: processed.filter(p => p.total > 0).length,
-                    king: [...processed].sort((a,b) => b.maxDay - a.maxDay)[0]
-                });
-                setLoading(false);
-            };
-
+            // Initialize data and quote rotation
             useEffect(() => { 
                 fetchData(); 
-                // Increased interval to 15 seconds for even better readability
-                const qTimer = setInterval(() => setQuoteIdx(i => (i + 1) % QUOTES.length), 15000); 
+                const qTimer = setInterval(
+                    () => setQuoteIdx(i => (i + 1) % QUOTES.length), 
+                    CONFIG.QUOTE_INTERVAL_MS
+                ); 
                 return () => clearInterval(qTimer); 
             }, []);
 
@@ -225,6 +393,7 @@
                 </div>
             );
 
+            // Navigation Button Component
             const NavButton = ({ id, label, icon }) => (
                 <button 
                     onClick={() => setActiveTab(id)}
@@ -267,10 +436,10 @@
                                             <div>
                                                 <div className="flex justify-between text-[10px] font-black uppercase mb-1">
                                                     <span>Goal Progress</span>
-                                                    <span>{Math.round((parsedData.grandTotal / (TOTAL_GOAL * parsedData.people.length)) * 100)}%</span>
+                                                    <span>{Math.round((parsedData.grandTotal / (CONFIG.TOTAL_GOAL * parsedData.people.length)) * 100)}%</span>
                                                 </div>
                                                 <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${(parsedData.grandTotal / (TOTAL_GOAL * parsedData.people.length)) * 100}%` }}></div>
+                                                    <div className="h-full bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${(parsedData.grandTotal / (CONFIG.TOTAL_GOAL * parsedData.people.length)) * 100}%` }}></div>
                                                 </div>
                                             </div>
                                             <div className="flex justify-between border-t border-white/10 pt-4">
@@ -372,7 +541,7 @@
                                     <ResponsiveContainer width="100%" height="100%">
                                         <PieChart>
                                             <Pie data={parsedData.regionData} dataKey="value" innerRadius={70} outerRadius={90} paddingAngle={8} stroke="none">
-                                                {parsedData.regionData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} cornerRadius={12} />)}
+                                                {parsedData.regionData.map((e, i) => <Cell key={i} fill={CONFIG.COLORS[i % CONFIG.COLORS.length]} cornerRadius={12} />)}
                                             </Pie>
                                             <Tooltip />
                                             <Legend verticalAlign="bottom" height={36} wrapperStyle={{fontSize: '9px', fontWeight: '900', textTransform: 'uppercase'}}/>
@@ -382,7 +551,7 @@
                                 <div className="space-y-3">
                                     {parsedData.regionData.map((reg, i) => (
                                         <div key={i} className="bg-white p-5 rounded-[1.5rem] flex justify-between items-center border border-slate-100 shadow-sm relative overflow-hidden">
-                                            <div className="absolute left-0 top-0 bottom-0 w-2" style={{ backgroundColor: COLORS[i % COLORS.length] }}></div>
+                                            <div className="absolute left-0 top-0 bottom-0 w-2" style={{ backgroundColor: CONFIG.COLORS[i % CONFIG.COLORS.length] }}></div>
                                             <div>
                                                 <span className="font-black text-sm uppercase text-slate-900 tracking-tighter">{reg.name}</span>
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{reg.efficiency} reps per PAX avg</p>
