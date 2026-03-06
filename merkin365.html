@@ -83,6 +83,30 @@
             "A year from now, you'll wish you started today."
         ];
 
+        // Canonical labels for known region variants.
+        const REGION_DISPLAY_ALIASES = {
+            ttown: 'T-Town',
+            f3naturecoast: 'F3 Nature Coast'
+        };
+
+        /**
+         * Build normalized region identity to merge small naming variations.
+         * @param {string} rawRegion - Region name from sheet
+         * @returns {{ key: string, name: string }} Normalized key + display name
+         */
+        const normalizeRegionIdentity = (rawRegion) => {
+            const cleaned = (rawRegion || '').replace(/\s+/g, ' ').trim();
+            if (!cleaned) return { key: 'unknown', name: 'Unknown' };
+
+            const key = cleaned.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!key) return { key: 'unknown', name: 'Unknown' };
+
+            return {
+                key,
+                name: REGION_DISPLAY_ALIASES[key] || cleaned
+            };
+        };
+
         // =====================================================
         // BUSINESS LOGIC - Core calculation functions
         // =====================================================
@@ -188,13 +212,15 @@
                 // Clean up name and extract region if present in parentheses
                 const cleanName = name.replace(/[🚙💪🏼🦬🪂]/g, '').trim();
                 const regionMatch = cleanName.match(/\(([^)]+)\)$/);
-                const region = regionMatch ? regionMatch[1] : 'Unknown';
+                const regionRaw = regionMatch ? regionMatch[1] : 'Unknown';
+                const regionIdentity = normalizeRegionIdentity(regionRaw);
                 const nameOnly = regionMatch ? cleanName.replace(/\s*\([^)]+\)$/, '').trim() : cleanName;
                 
                 if (nameOnly && !['TOTAL', 'AVERAGE', 'DATE', 'DAY', 'PACE TRACKER'].includes(nameOnly.toUpperCase())) {
                     people.push({
                         name: nameOnly,
-                        region: region,
+                        region: regionIdentity.name,
+                        regionKey: regionIdentity.key,
                         colIdx: i + 3,
                         total: 0,
                         maxDay: 0,
@@ -314,21 +340,26 @@
             // Aggregate by region
             const regionStats = {};
             processedPeople.forEach(person => {
-                if (!regionStats[person.region]) {
-                    regionStats[person.region] = { total: 0, personCount: 0 };
+                const regionKey = person.regionKey || 'unknown';
+                if (!regionStats[regionKey]) {
+                    regionStats[regionKey] = {
+                        name: person.region || 'Unknown',
+                        total: 0,
+                        personCount: 0
+                    };
                 }
                 if (person.total > 0) {
-                    regionStats[person.region].total += person.total;
-                    regionStats[person.region].personCount += 1;
+                    regionStats[regionKey].total += person.total;
+                    regionStats[regionKey].personCount += 1;
                 }
             });
             
-            const regionData = Object.keys(regionStats)
-                .filter(key => key !== 'Unknown')
-                .map(key => ({ 
-                    name: key, 
-                    value: regionStats[key].total,
-                    efficiency: Math.round(regionStats[key].total / regionStats[key].personCount) 
+            const regionData = Object.values(regionStats)
+                .filter(region => region.name !== 'Unknown')
+                .map(region => ({ 
+                    name: region.name,
+                    value: region.total,
+                    efficiency: region.personCount > 0 ? Math.round(region.total / region.personCount) : 0
                 }))
                 .sort((a, b) => b.value - a.value);
 
@@ -492,15 +523,15 @@
                                             </div>
                                             <div className="flex justify-between border-t border-white/10 pt-4">
                                                 <div className="text-center flex-1">
-                                                    <p className="text-[8px] font-black text-slate-500 uppercase">Total Reps</p>
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase">Total Reps</p>
                                                     <p className="text-lg font-black text-blue-400">{parsedData.grandTotal.toLocaleString()}</p>
                                                 </div>
                                                 <div className="text-center flex-1 border-x border-white/10">
-                                                    <p className="text-[8px] font-black text-slate-500 uppercase">Tons Moved</p>
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase">Tons Moved</p>
                                                     <p className="text-lg font-black text-emerald-400">{(parsedData.grandTotal * 130 / 2000).toFixed(1)}</p>
                                                 </div>
                                                 <div className="text-center flex-1">
-                                                    <p className="text-[8px] font-black text-slate-500 uppercase">Active</p>
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase">Active</p>
                                                     <p className="text-lg font-black text-amber-400">{parsedData.activeCount}</p>
                                                 </div>
                                             </div>
