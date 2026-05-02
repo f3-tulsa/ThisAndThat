@@ -245,7 +245,7 @@
             
             rows.slice(headerIdx + 1).forEach(row => {
                 const dateStr = row[0];
-                if (!dateStr || /total|average/i.test(dateStr)) return;
+                if (!dateStr || /total|average|see the stats/i.test(dateStr)) return;
                 
                 // Parse date (format: "Jan 1", "Feb 2", etc.)
                 const rDate = new Date(dateStr + ', 2026');
